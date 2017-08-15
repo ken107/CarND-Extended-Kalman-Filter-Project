@@ -68,7 +68,7 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &m) {
     float theta = m.raw_measurements_[1];
     float ro_dot = m.raw_measurements_[2];
     VectorXd z = VectorXd(3);
-    z << ro*cos(theta), ro*sin(theta), 0, 0;
+    z << ro, theta, ro_dot;
     RadarUpdate(z);
   }
   else if (m.sensor_type_ == MeasurementPackage::LASER) {
@@ -83,8 +83,8 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &m) {
   }
 
   // print the output
-  cout << "x_ = " << x_ << endl;
-  cout << "P_ = " << P_ << endl;
+  //cout << "x_ = " << x_ << endl;
+  //cout << "P_ = " << P_ << endl;
 }
 
 
@@ -127,17 +127,87 @@ void FusionEKF::LaserUpdate(const VectorXd &z) {
       0, 0.0225;
 
   MatrixXd Ht = H.transpose();
-	VectorXd y = z - H * x_;
-	MatrixXd S = H * P_ * Ht + R;
-	MatrixXd K = P_ * Ht * S.inverse();
+  VectorXd y = z - H * x_;
+  MatrixXd S = H * P_ * Ht + R;
+  MatrixXd K = P_ * Ht * S.inverse();
 
-	//new estimate
-	x_ = x_ + (K * y);
-	long x_size = x_.size();
-	MatrixXd I = MatrixXd::Identity(x_size, x_size);
-	P_ = (I - K * H) * P_;
+  //new estimate
+  x_ = x_ + (K * y);
+  long x_size = x_.size();
+  MatrixXd I = MatrixXd::Identity(x_size, x_size);
+  P_ = (I - K * H) * P_;
 }
 
 
 void FusionEKF::RadarUpdate(const VectorXd &z) {
+  MatrixXd H = CalculateJacobian();
+
+  MatrixXd R(3,3);
+  R << 0.09, 0, 0,
+      0, 0.0009, 0,
+      0, 0, 0.09;
+
+  MatrixXd Ht = H.transpose();
+  VectorXd y = z - GetPolarStateVector();
+  y(1) = NormalizeAngle(y(1));
+  MatrixXd S = H * P_ * Ht + R;
+  MatrixXd K = P_ * Ht * S.inverse();
+
+  //new estimate
+  x_ = x_ + (K * y);
+  long x_size = x_.size();
+  MatrixXd I = MatrixXd::Identity(x_size, x_size);
+  P_ = (I - K * H) * P_;
+}
+
+
+VectorXd FusionEKF::GetPolarStateVector() {
+  //recover state parameters
+  float px = x_(0);
+  float py = x_(1);
+  float vx = x_(2);
+  float vy = x_(3);
+
+  //calculate h(x)
+  VectorXd h(3);
+  float ro = sqrt(px*px + py*py);
+  h << ro, atan2(py, px), (px*vx + py*vy) / ro;
+
+  return h;
+}
+
+
+float FusionEKF::NormalizeAngle(float rad) {
+  const float PI = 3.14159265358979f;
+  while (rad < -PI) rad += 2*PI;
+  while (rad > PI) rad -= 2*PI;
+  return rad;
+}
+
+
+MatrixXd FusionEKF::CalculateJacobian() {
+  MatrixXd Hj(3,4);
+
+  //recover state parameters
+  float px = x_(0);
+  float py = x_(1);
+  float vx = x_(2);
+  float vy = x_(3);
+
+  float c1 = px*px+py*py;
+  float c2 = sqrt(c1);
+  float c3 = (c1*c2);
+
+  //check division by zero
+  if (fabs(c1) < 0.0001) {
+  	cout << "CalculateJacobian () - Error - Division by Zero" << endl;
+  	return Hj;
+  }
+
+  //compute the Jacobian matrix
+  Hj << (px/c2), (py/c2), 0, 0,
+  	  -(py/c1), (px/c1), 0, 0,
+  	  py*(vx*py - vy*px)/c3, px*(px*vy - py*vx)/c3, px/c2, py/c2;
+
+  return Hj;
 }

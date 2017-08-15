@@ -20,6 +20,9 @@ private:
   void Predict(const float dt);
   void LaserUpdate(const Eigen::VectorXd &z);
   void RadarUpdate(const Eigen::VectorXd &z);
+  Eigen::VectorXd GetPolarStateVector();
+  float NormalizeAngle(float);
+  Eigen::MatrixXd CalculateJacobian();
 };
 
 #endif /* FusionEKF_H_ */
